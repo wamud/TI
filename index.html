@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Logical States from Transversal Injection</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 1rem 2rem 2rem 2rem;
+      background: #f8f9fa;
+    }
+
+    h1 {
+      text-align: center;
+      margin-top: 0.5rem;
+      margin-bottom: 0.25rem;
+      font-size: 1.6rem;
+    }
+
+    #author {
+      text-align: center;
+      font-size: 0.95rem;
+      margin-bottom: 0rem;
+    }
+
+    .social-icons {
+      display: inline-block;
+      margin-left: 1rem;
+    }
+
+    .social-icons a {
+      margin-left: 10px;
+      text-decoration: none;
+    }
+
+    .social-icons img {
+      width: 24px;
+      vertical-align: middle;
+    }
+
+    #blurb {
+      max-width: 900px;
+      margin: 0 auto 1rem auto;
+      text-align: left;
+      font-size: 1.05em;
+      line-height: 1.6;
+    }
+
+    #controls {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 2rem;
+      margin-bottom: 1rem;
+      align-items: center;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .label-with-buttons {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.4rem;
+    }
+
+    button {
+      padding: 0.2rem 0.6rem;
+      font-size: 1rem;
+    }
+
+    #image-container {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    canvas {
+      border: 1px solid #ccc;
+      background-color: white;
+    }
+  </style>
+
+  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+
+  <h1 style="margin-top: 0.5rem; margin-bottom: 20px;">Logical States from Transversal Injection</h1>
+
+  <div id="controls">
+    <div class="control-group">
+      <label>Plot Type</label>
+      <select id="plotType">
+        <option value="bloch spheres">Bloch Spheres</option>
+        <option value="rabi curves">Rabi Curves</option>
+        <option value="both">Both</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <label>Distance</label>
+      <select id="distance">
+        <option value="2">2</option>
+        <option value="3">3</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <div class="label-with-buttons">
+        <button id="thetaPrev">←</button>
+        <label>θ = <span id="thetaValue">0π</span></label>
+        <button id="thetaNext">→</button>
+      </div>
+      <input type="range" id="thetaSlider" min="0" max="256" value="0" />
+    </div>
+
+    <div class="control-group">
+      <div class="label-with-buttons">
+        <button id="phiPrev">←</button>
+        <label>φ = <span id="phiValue">0π</span></label>
+        <button id="phiNext">→</button>
+      </div>
+      <input type="range" id="phiSlider" min="0" max="128" value="0" />
+    </div>
+  </div>
+
+  <div id="image-container">
+    <canvas id="blochCanvas"></canvas>
+    <canvas id="rabiCanvas"></canvas>
+  </div>
+
+  <div id="blurb">
+    Possible logical states in an
+    <a href="https://arxiv.org/abs/2409.14765" target="_blank">unrotated surface code</a>
+    after
+    <a href="https://arxiv.org/abs/2404.01301" target="_blank">transversal injection</a>:
+    \(n\) data qubits are uniformly rotated from \( |0\rangle^{\otimes n} \) to
+    \(\left(\cos(\theta/2)|0\rangle + e^{i\phi} \sin(\theta/2)|1\rangle\right)^{\otimes n} \).
+    Measuring the \( n-1 \) stabilisers then projects the system to a logical state
+    whose location on the Bloch sphere (assuming no noise) is determined by the stabiliser eigenvalues.
+  </div>
+
+  <div id="author">
+    <strong>Author:</strong> Anthony O'Rourke
+    <span class="social-icons">
+      <a href="https://github.com/wamud" target="_blank" title="GitHub">
+        <img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/github.svg" alt="GitHub" />
+      </a>
+      <a href="https://orcid.org/0009-0000-4736-7537" target="_blank" title="ORCID">
+        <img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/orcid.svg" alt="ORCID" />
+      </a>
+    </span>
+  </div>
+
+  <script>
+    const thetaSlider = document.getElementById("thetaSlider");
+    const phiSlider = document.getElementById("phiSlider");
+    const thetaPrev = document.getElementById("thetaPrev");
+    const thetaNext = document.getElementById("thetaNext");
+    const phiPrev = document.getElementById("phiPrev");
+    const phiNext = document.getElementById("phiNext");
+
+    const plotTypeSelect = document.getElementById("plotType");
+    const distanceSelect = document.getElementById("distance");
+
+    const thetaValueLabel = document.getElementById("thetaValue");
+    const phiValueLabel = document.getElementById("phiValue");
+
+    const blochCanvas = document.getElementById("blochCanvas");
+    const rabiCanvas = document.getElementById("rabiCanvas");
+    const blochCtx = blochCanvas.getContext("2d");
+    const rabiCtx = rabiCanvas.getContext("2d");
+
+    const imageSizes = {
+      "bloch spheres": { w: 500, h: 620 },
+      "rabi curves": { w: 960, h: 720 }
+    };
+
+    const thetaDivs = 257;
+    const phiDivs = 129;
+
+    let lastChanged = "theta";
+    const atlasCache = new Map();
+    const cacheQueue = [];
+    const maxCachedAtlases = 250;
+
+    function cacheImage(path, img) {
+      if (!atlasCache.has(path)) {
+        atlasCache.set(path, img);
+        cacheQueue.push(path);
+        if (cacheQueue.length > maxCachedAtlases) {
+          const oldPath = cacheQueue.shift();
+          atlasCache.delete(oldPath);
+        }
+      }
+    }
+
+    function getImagePath(type, distance, thetaIndex, phiIndex, lastChanged) {
+      const theta = thetaIndex * (2 / (thetaDivs - 1));
+      const phi = phiIndex * (1 / (phiDivs - 1));
+      const thetaStr = theta.toFixed(7);
+      const phiStr = phi.toFixed(7);
+      const isTheta = lastChanged === "theta";
+      const tileIndex = isTheta ? thetaIndex : phiIndex;
+      const path = `${type}/${isTheta ? "for_each_phi" : "for_each_theta"}_d${distance}/${isTheta ? `φ=${phiStr}` : `θ=${thetaStr}`}π.png`;
+
+      return { path, tileIndex, thetaStr, phiStr };
+    }
+
+    function drawImage(ctx, img, tileIndex, w, h) {
+      ctx.drawImage(img, tileIndex * w, 0, w, h, 0, 0, ctx.canvas.width, ctx.canvas.height);
+    }
+
+    function loadAndDraw(canvas, ctx, path, tileIndex, w, h) {
+      if (atlasCache.has(path)) {
+        const img = atlasCache.get(path);
+        if (img.complete) {
+          drawImage(ctx, img, tileIndex, w, h);
+        } else {
+          img.onload = () => drawImage(ctx, img, tileIndex, w, h);
+        }
+      } else {
+        const img = new Image();
+        img.onload = () => {
+          cacheImage(path, img);
+          drawImage(ctx, img, tileIndex, w, h);
+        };
+        img.src = path;
+      }
+    }
+
+    function resizeCanvasesFor(plotType) {
+      const targetHeight = 620;
+
+      if (plotType === "bloch spheres" || plotType === "both") {
+        const { w, h } = imageSizes["bloch spheres"];
+        blochCanvas.width = Math.round(targetHeight * (w / h));
+        blochCanvas.height = targetHeight;
+      }
+
+      if (plotType === "rabi curves" || plotType === "both") {
+        const { w, h } = imageSizes["rabi curves"];
+        rabiCanvas.width = Math.round(targetHeight * (w / h));
+        rabiCanvas.height = targetHeight;
+      }
+    }
+
+    function updateImage() {
+      const plotType = plotTypeSelect.value;
+      const distance = distanceSelect.value;
+      const thetaIndex = parseInt(thetaSlider.value);
+      const phiIndex = parseInt(phiSlider.value);
+
+      const theta = thetaIndex * (2 / (thetaDivs - 1));
+      const phi = phiIndex * (1 / (phiDivs - 1));
+      thetaValueLabel.textContent = `${theta.toFixed(7)}π`;
+      phiValueLabel.textContent = `${phi.toFixed(7)}π`;
+
+      blochCanvas.style.display = (plotType === "rabi curves") ? "none" : "block";
+      rabiCanvas.style.display = (plotType === "bloch spheres") ? "none" : "block";
+
+      if (plotType !== "rabi curves") {
+        const { path, tileIndex } = getImagePath("bloch spheres", distance, thetaIndex, phiIndex, lastChanged);
+        const { w, h } = imageSizes["bloch spheres"];
+        loadAndDraw(blochCanvas, blochCtx, path, tileIndex, w, h);
+      }
+
+      if (plotType !== "bloch spheres") {
+        const { path, tileIndex } = getImagePath("rabi curves", distance, thetaIndex, phiIndex, lastChanged);
+        const { w, h } = imageSizes["rabi curves"];
+        loadAndDraw(rabiCanvas, rabiCtx, path, tileIndex, w, h);
+      }
+    }
+
+    thetaSlider.addEventListener("input", () => {
+      lastChanged = "theta";
+      updateImage();
+    });
+
+    phiSlider.addEventListener("input", () => {
+      lastChanged = "phi";
+      updateImage();
+    });
+
+    thetaPrev.addEventListener("click", () => {
+      thetaSlider.value = Math.max(0, parseInt(thetaSlider.value) - 1);
+      lastChanged = "theta";
+      updateImage();
+    });
+
+    thetaNext.addEventListener("click", () => {
+      thetaSlider.value = Math.min(256, parseInt(thetaSlider.value) + 1);
+      lastChanged = "theta";
+      updateImage();
+    });
+
+    phiPrev.addEventListener("click", () => {
+      phiSlider.value = Math.max(0, parseInt(phiSlider.value) - 1);
+      lastChanged = "phi";
+      updateImage();
+    });
+
+    phiNext.addEventListener("click", () => {
+      phiSlider.value = Math.min(128, parseInt(phiSlider.value) + 1);
+      lastChanged = "phi";
+      updateImage();
+    });
+
+    plotTypeSelect.addEventListener("change", () => {
+      resizeCanvasesFor(plotTypeSelect.value);
+      updateImage();
+    });
+
+    distanceSelect.addEventListener("change", updateImage);
+
+    // Initial setup
+    resizeCanvasesFor(plotTypeSelect.value);
+    updateImage();
+  </script>
+
+</body>
+</html>
